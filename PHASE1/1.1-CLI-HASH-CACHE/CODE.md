@@ -189,6 +189,48 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
+**How clap derive attributes map to CLI behavior:**
+
+A **bare field** with no `#[arg(...)]` attribute becomes a **positional argument** — the user passes it by position, not by name. If the field type is not `Option<T>`, it's required:
+
+```rust
+/// Directory to scan
+directory: std::path::PathBuf,
+//  ↳ usage: hashcache ./src
+//                      ^^^^^  positional, required
+```
+
+Adding `#[arg(long)]` turns the field into a **named flag**. Clap derives the flag name from the field name, converting underscores to hyphens (`cache_file` → `--cache-file`):
+
+```rust
+#[arg(long)]
+json: bool,
+//  ↳ usage: hashcache ./src --json
+//    A bool field is a toggle — present means true, absent means false.
+```
+
+Adding `short` alongside `long` creates a **single-letter shorthand**. Clap uses the first letter of the field name by default (`cache_file` → `-c`, `quiet` → `-q`):
+
+```rust
+#[arg(short, long)]
+quiet: bool,
+//  ↳ usage: hashcache ./src -q
+//           hashcache ./src --quiet
+//           both are equivalent
+```
+
+`default_value` makes a named argument **optional** — if the user doesn't pass it, clap uses the default. The field type determines what value the flag expects (a `PathBuf` expects a path string, a `bool` expects nothing):
+
+```rust
+#[arg(short, long, default_value = ".hash_cache.bin")]
+cache_file: std::path::PathBuf,
+//  ↳ usage: hashcache ./src                         (uses .hash_cache.bin)
+//           hashcache ./src -c my_hashes.bin         (overrides with short flag)
+//           hashcache ./src --cache-file custom.bin  (overrides with long flag)
+```
+
+The `///` doc comments above each field become the **help text** shown by `hashcache --help`.
+
 ---
 
 ### `sha2` — SHA-256 Hashing
@@ -312,34 +354,129 @@ fn save_cache_json(cache: &HashCache, path: &std::path::Path) -> anyhow::Result<
 
 ### `anyhow` — Error Handling
 
-📖 [docs.rs](https://docs.rs/anyhow/latest/anyhow/) · [GitHub](https://github.com/dtolnay/anyhow)
+📖 [docs.rs](https://docs.rs/anyhow/latest/anyhow/) · [GitHub](https://github.com/dtolnay/anyhow) · [Context trait](https://docs.rs/anyhow/latest/anyhow/trait.Context.html)
 
-**What it does:** Provides a flexible error type (`anyhow::Error`) that can wrap any error. The `.context()` method lets you annotate errors with human-readable messages for better debugging.
+**What it does:** Provides a flexible error type (`anyhow::Error`) that can wrap any error implementing `std::error::Error`. The key advantage over raw `std::io::Error` or custom enums is that you get error chaining and context annotations for free, without defining error types for every function.
 
 **Cargo.toml:**
 ```toml
 anyhow = "1"
 ```
 
-**Usage:**
+#### The `?` operator with `anyhow::Result`
+
+`anyhow::Result<T>` is just an alias for `Result<T, anyhow::Error>`. The `?` operator automatically converts any `std::error::Error` into `anyhow::Error`:
+
+```rust
+use anyhow::Result;
+
+// ? converts std::io::Error → anyhow::Error automatically
+fn read_cache(path: &std::path::Path) -> Result<Vec<u8>> {
+    let data = std::fs::read(path)?;  // io::Error becomes anyhow::Error
+    Ok(data)
+}
+```
+
+Without `anyhow`, you'd need to either define your own error enum or use `Box<dyn Error>`. Anyhow handles this boilerplate.
+
+#### Adding context with `.context()` and `.with_context()`
+
+Raw errors like "No such file or directory" don't tell you *which* file failed. `.context()` wraps the error with a human-readable message:
+
 ```rust
 use anyhow::{Context, Result};
 
 fn hash_file(path: &std::path::Path) -> Result<String> {
-    let mut file = std::fs::File::open(path)
-        .with_context(|| format!("Failed to open file: {}", path.display()))?;
-    
-    // ... hashing logic ...
+    // .context() adds a static string
+    let data = std::fs::read(path)
+        .context("failed to read file for hashing")?;
+
+    // .with_context() takes a closure — use when you need to format a message
+    // (avoids the format!() cost on the success path)
+    let data = std::fs::read(path)
+        .with_context(|| format!("failed to read '{}'", path.display()))?;
 
     Ok("abc123".to_string())
 }
+```
 
-fn main() -> Result<()> {
-    let hash = hash_file(std::path::Path::new("test.txt"))?;
-    println!("Hash: {}", hash);
+The difference: `.context("static string")` always allocates the message. `.with_context(|| ...)` only runs the closure when the error actually happens, which is slightly more efficient when the message includes `format!()`.
+
+#### How error chains display
+
+When an error propagates through multiple `.context()` calls, anyhow builds a **chain**. The display format depends on whether you use `{}` or `{:#}`:
+
+```rust
+fn load_and_verify(dir: &std::path::Path) -> Result<()> {
+    let cache_path = dir.join(".hash_cache.bin");
+    let data = std::fs::read(&cache_path)
+        .with_context(|| format!("failed to read cache from '{}'", cache_path.display()))?;
+    let _cache: Vec<u8> = bincode::deserialize(&data)
+        .context("cache file is corrupted or was written by an incompatible version")?;
+    Ok(())
+}
+
+fn main() {
+    if let Err(err) = load_and_verify(std::path::Path::new("./project")) {
+        // Display format — just the outermost message:
+        eprintln!("Error: {err}");
+        // → Error: cache file is corrupted or was written by an incompatible version
+
+        // Alternate display — the full chain, separated by ": "
+        eprintln!("Error: {err:#}");
+        // → Error: cache file is corrupted or was written by an incompatible version: \
+        //   failed to read cache from './project/.hash_cache.bin': \
+        //   No such file or directory (os error 2)
+
+        // Debug format — the full chain plus a backtrace (if RUST_BACKTRACE=1)
+        eprintln!("Error: {err:?}");
+    }
+}
+```
+
+The `{:#}` (alternate display) format is the most useful for CLI tools — it shows the full chain in one line. The `{:?}` (debug) format is better for development because it includes backtraces.
+
+#### Creating errors directly with `bail!` and `anyhow!`
+
+When you need to *create* an error rather than *wrap* one, use `bail!` (which returns early) or `anyhow!` (which creates the error value):
+
+```rust
+use anyhow::{bail, anyhow, Result};
+
+fn validate_directory(path: &std::path::Path) -> Result<()> {
+    if !path.exists() {
+        // bail! is shorthand for: return Err(anyhow!(...))
+        bail!("directory '{}' does not exist", path.display());
+    }
+
+    if !path.is_dir() {
+        // anyhow! creates the error without returning — useful in match arms
+        return Err(anyhow!("'{}' is a file, not a directory", path.display()));
+    }
+
     Ok(())
 }
 ```
+
+#### Using anyhow in `main()`
+
+When `main()` returns `anyhow::Result<()>`, Rust prints the error with `Debug` formatting on failure. This gives you the full chain + backtrace:
+
+```rust
+fn main() -> anyhow::Result<()> {
+    let hash = hash_file(std::path::Path::new("test.txt"))?;
+    println!("Hash: {hash}");
+    Ok(())
+}
+
+// If test.txt doesn't exist, the program prints:
+//   Error: Failed to open file: test.txt
+//
+//   Caused by:
+//       No such file or directory (os error 2)
+```
+
+If you want more control over the output format, use `ExitCode` instead (see 1.2) and format the error yourself with `{:#}`.
 
 ---
 
