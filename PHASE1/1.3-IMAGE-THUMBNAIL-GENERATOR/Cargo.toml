@@ -1,0 +1,41 @@
+[package]
+name = "image-thumbnail"
+version = "0.1.0"
+edition = "2024"
+
+# ---------------------------------------------------------------------------
+# Optional feature flags
+#
+# Features gate optional dependencies so the binary only pays for what it
+# uses. Compile with one or both:
+#
+#   cargo build --features rayon
+#   cargo build --features tokio
+#   cargo build --features rayon,tokio
+#
+# The `dep:` prefix (stabilised in Rust 1.60) lets the feature name match the
+# crate name without implicitly activating the crate everywhere.
+# ---------------------------------------------------------------------------
+[features]
+rayon = ["dep:rayon"]
+tokio = ["dep:tokio"]
+
+[dependencies]
+anyhow  = "1.0"
+clap    = { version = "4.5", features = ["derive"] }
+image   = "0.25"
+walkdir = "2.5"
+
+# Optional: data-parallel work-stealing thread pool.
+# Great for CPU-bound batch workloads where tasks are roughly equal in cost.
+rayon = { version = "1", optional = true }
+
+# Optional: async runtime for concurrent I/O + CPU work.
+# Features needed:
+#   rt-multi-thread  – multi-threaded Tokio runtime (Runtime::new())
+#   sync             – Semaphore, Mutex, etc.
+#   macros           – #[tokio::test] for async tests
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"], optional = true }
+
+[dev-dependencies]
+tempfile = "3.20"
