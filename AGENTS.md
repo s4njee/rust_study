@@ -1,0 +1,21 @@
+- This repository is a Rust learning workspace with small standalone exercises and longer-form project ports.
+- Treat each project directory as its own unit unless the user explicitly asks for cross-project changes.
+- Read `README.md` and `STUDY_GUIDE.md` before making structural decisions.
+- When working inside a specific project, inspect that folder's `Cargo.toml`, `PLAN.md`, `CODE.md`, and `DECISIONS.md` when present.
+- `PHASE1/*` directories are independent exercises; keep changes tightly scoped to the selected exercise.
+- `csearch-rscraper/` is a larger porting effort; prefer incremental, milestone-based changes there.
+- Do not convert the repo into a Cargo workspace unless the user explicitly asks for that.
+- Prefer simple, instructional implementations over clever abstractions.
+- Keep code idiomatic Rust with explicit error handling and small focused functions.
+- Avoid introducing new dependencies unless they materially improve the task.
+- Match the style already used by the target crate.
+- Update nearby docs when behavior or design changes materially.
+- Use `PLAN.md` for milestone or scope changes.
+- Use `DECISIONS.md` for design tradeoffs.
+- Use `CODE.md` for implementation notes when that pattern already exists.
+- Keep documentation concise and learning-oriented.
+- Run validation from the affected crate directory, not the repo root, unless the user asks otherwise.
+- Prefer the smallest useful checks first: `cargo fmt`, `cargo check`, `cargo test`, or a targeted binary run.
+- Do not try to fix unrelated failures in other projects.
+- Keep generated artifacts out of version control.
+- Use the root `.gitignore` for shared ignores such as `target/` and OS metadata.
