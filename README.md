@@ -13,6 +13,7 @@ If you want the full plan, project rationale, and crate recommendations, start t
 ## Repo Structure
 
 - [STUDY_GUIDE.md](/Users/sanjee/Documents/projects/rust_study/STUDY_GUIDE.md): the full learning roadmap
+- [docs](/Users/sanjee/Documents/projects/rust_study/docs): split study notes for Rust patterns used in the repo
 - [PHASE1](/Users/sanjee/Documents/projects/rust_study/PHASE1): early fundamentals projects
 - [csearch-rscraper](/Users/sanjee/Documents/projects/rust_study/csearch-rscraper): longer-form port work and planning
 
