@@ -1,0 +1,41 @@
+services:
+  postgres:
+    build:
+      context: ../../..
+      dockerfile: k8s/db/Dockerfile
+    environment:
+      POSTGRES_DB: csearch
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d csearch"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  rscraper:
+    build:
+      context: ../../..
+      dockerfile: backend/scraper/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CONGRESSDIR: /srv/csearch
+      POSTGRESURI: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: csearch
+      DB_PORT: "5432"
+      RUN_BILLS: "true"
+      RUN_VOTES: "false"
+      LOG_LEVEL: info
+      REDIS_URL: redis://unused:6379
+    volumes:
+      - ${SMOKE_RUNTIME_DIR:?set SMOKE_RUNTIME_DIR}:/srv/csearch
+    restart: "no"
+
+volumes:
+  pgdata:
